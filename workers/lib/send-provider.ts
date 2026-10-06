@@ -64,9 +64,12 @@ async function sendViaResend(
 	if (params.text) body.text = params.text;
 	if (params.cc) body.cc = Array.isArray(params.cc) ? params.cc : [params.cc];
 	if (params.bcc) body.bcc = Array.isArray(params.bcc) ? params.bcc : [params.bcc];
-	if (params.headers && Object.keys(params.headers).length > 0) {
-		body.headers = params.headers;
-	}
+	// Keep the visible Sender aligned with From. Some receiving clients
+	// otherwise synthesize Sender from the provider's bounce address.
+	const headers = Object.fromEntries(
+		Object.entries(params.headers ?? {}).filter(([name]) => name.toLowerCase() !== "sender"),
+	);
+	body.headers = { ...headers, Sender: formatFrom(params.from) };
 	if (params.attachments && params.attachments.length > 0) {
 		body.attachments = params.attachments.map((a) => ({
 			filename: a.filename,

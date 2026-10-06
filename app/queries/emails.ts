@@ -55,7 +55,7 @@ export function useEmail(
 		queryKey: mailboxId && emailId
 			? queryKeys.emails.detail(mailboxId, emailId)
 			: ["emails", "_disabled_detail"],
-		queryFn: () => api.getEmail(mailboxId!, emailId!) as Promise<Email>,
+		queryFn: ({ signal }) => api.getEmail(mailboxId!, emailId!, { signal }) as Promise<Email>,
 		enabled: !!mailboxId && !!emailId,
 	});
 }
@@ -96,8 +96,13 @@ export function useThreadReplies(
 /** Invalidate both the email list and folder counts after any email mutation. */
 function useInvalidateEmailData() {
 	const qc = useQueryClient();
-	return (mailboxId: string) => {
-		qc.invalidateQueries({ queryKey: ["emails", mailboxId] });
+	return (mailboxId: string, deletedEmailId?: string) => {
+		qc.invalidateQueries({
+			queryKey: ["emails", mailboxId],
+			// The selected detail may still be mounted when deletion succeeds.
+			// Refetch lists and threads without requesting the deleted email.
+			predicate: (query) => query.queryKey[2] !== deletedEmailId,
+		});
 		qc.invalidateQueries({
 			queryKey: queryKeys.folders.list(mailboxId),
 		});
@@ -211,6 +216,7 @@ export function useMarkThreadRead() {
 }
 
 export function useDeleteEmail() {
+	const qc = useQueryClient();
 	const invalidate = useInvalidateEmailData();
 	return useMutation({
 		mutationFn: ({
@@ -218,7 +224,12 @@ export function useDeleteEmail() {
 			id,
 		}: { mailboxId: string; id: string }) =>
 			api.deleteEmail(mailboxId, id),
-		onSuccess: (_data, { mailboxId }) => invalidate(mailboxId),
+		onSuccess: async (_data, { mailboxId, id }) => {
+			const queryKey = queryKeys.emails.detail(mailboxId, id);
+			await qc.cancelQueries({ queryKey, exact: true });
+			qc.removeQueries({ queryKey, exact: true });
+			invalidate(mailboxId, id);
+		},
 	});
 }
 
